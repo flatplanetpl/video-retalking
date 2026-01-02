@@ -127,16 +127,46 @@ def face_detect(images, args, jaw_correction=False, detector=None):
 
     results = []
     pady1, pady2, padx1, padx2 = args.pads if jaw_correction else (0,20,0,0)
+
+    # First pass: collect all detections, mark None for missing
+    raw_results = []
     for rect, image in zip(predictions, images):
         if rect is None:
-            cv2.imwrite('temp/faulty_frame.jpg', image) # check this frame where the face was not detected.
-            raise ValueError('Face not detected! Ensure the video contains a face in all the frames.')
+            raw_results.append(None)
+        else:
+            y1 = max(0, rect[1] - pady1)
+            y2 = min(image.shape[0], rect[3] + pady2)
+            x1 = max(0, rect[0] - padx1)
+            x2 = min(image.shape[1], rect[2] + padx2)
+            raw_results.append([x1, y1, x2, y2])
 
-        y1 = max(0, rect[1] - pady1)
-        y2 = min(image.shape[0], rect[3] + pady2)
-        x1 = max(0, rect[0] - padx1)
-        x2 = min(image.shape[1], rect[2] + padx2)
-        results.append([x1, y1, x2, y2])
+    # Second pass: interpolate missing detections from neighbors
+    for i, (rect, image) in enumerate(zip(raw_results, images)):
+        if rect is None:
+            # Find nearest valid detection before and after
+            prev_rect, next_rect = None, None
+            for j in range(i-1, -1, -1):
+                if raw_results[j] is not None:
+                    prev_rect = raw_results[j]
+                    break
+            for j in range(i+1, len(raw_results)):
+                if raw_results[j] is not None:
+                    next_rect = raw_results[j]
+                    break
+
+            if prev_rect is not None and next_rect is not None:
+                # Interpolate between prev and next
+                raw_results[i] = [(p + n) // 2 for p, n in zip(prev_rect, next_rect)]
+            elif prev_rect is not None:
+                raw_results[i] = prev_rect.copy()
+            elif next_rect is not None:
+                raw_results[i] = next_rect.copy()
+            else:
+                cv2.imwrite('temp/faulty_frame.jpg', image)
+                raise ValueError('Face not detected in any frame!')
+
+    # raw_results already contains [x1, y1, x2, y2] with padding applied
+    results = raw_results
 
     boxes = np.array(results)
     if not args.nosmooth: boxes = get_smoothened_boxes(boxes, T=5)

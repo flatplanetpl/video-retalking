@@ -67,8 +67,24 @@ def align_face(filepath_or_image, predictor, output_size, detector=None,
 
 
 def crop_image(filepath, output_size, quad, enable_padding=False):
+    # Handle NaN values in quad - return centered crop if quad is invalid
+    if np.any(np.isnan(quad)):
+        if isinstance(filepath, PIL.Image.Image):
+            img = filepath
+        else:
+            img = PIL.Image.open(filepath)
+        # Return center crop
+        w, h = img.size
+        size = min(w, h)
+        left = (w - size) // 2
+        top = (h - size) // 2
+        return img.crop((left, top, left + size, top + size)).resize((output_size, output_size), PIL.Image.LANCZOS)
+
     x = (quad[3] - quad[1]) / 2
     qsize = np.hypot(*x) * 2
+    # Handle NaN values
+    if np.isnan(qsize) or qsize == 0:
+        qsize = output_size  # Default to output_size if NaN
     # read image
     if isinstance(filepath, PIL.Image.Image):
         img = filepath
@@ -151,7 +167,7 @@ def crop_faces(IMAGE_SIZE, files, scale, center_sigma=0.0, xy_sigma=0.0, use_fa=
     if use_fa:
         if fa == None:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=True, device=device)
+            fa = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=True, device=device)
         predictor = None
         detector = None
     else:

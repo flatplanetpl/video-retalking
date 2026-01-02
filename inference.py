@@ -237,7 +237,12 @@ def main():
                 
             if args.without_rl1 is not False:
                 incomplete, reference = torch.split(img_batch, 3, dim=1)
-                mask = torch.where(incomplete==0, torch.ones_like(incomplete), torch.zeros_like(incomplete)) 
+                mask = torch.where(incomplete==0, torch.ones_like(incomplete), torch.zeros_like(incomplete))
+                # Resize mask and cur_gen_faces to match model output size (always 384x384)
+                pred_size = pred.shape[2:]  # (H, W)
+                if mask.shape[2:] != pred_size:
+                    mask = torch.nn.functional.interpolate(mask, size=pred_size, mode='nearest')
+                    cur_gen_faces = torch.nn.functional.interpolate(cur_gen_faces, size=pred_size, mode='bilinear')
                 pred = pred * mask + cur_gen_faces * (1 - mask) 
         
         pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.
